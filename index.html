@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Animal Classifier & Taxonomist</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; color: #333; margin: 0; padding: 20px; line-height: 1.6; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; text-align: center; }
+        .section { margin-bottom: 30px; padding: 20px; border: 1px solid #eee; border-radius: 8px; }
+        input[type="text"] { width: 80%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        button { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #2980b9; }
+        #image-preview { max-width: 100%; height: 250px; display: block; margin: 20px auto; border-radius: 8px; border: 2px dashed #ddd; object-fit: contain; }
+        .result-box { background: #e8f4fd; border-left: 5px solid #3498db; padding: 15px; }
+        .tree-container { overflow-x: auto; background: #fff; padding: 10px; border: 1px solid #ddd; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🐾 Animal Classification Hub</h1>
+
+    <div class="section">
+        <h3>1. Setup Your Model</h3>
+        <p>Paste your Teachable Machine "Model URL" (e.g., <code>https://teachablemachine.withgoogle.com/models/abcd123/</code>)</p>
+        <input type="text" id="model-url" placeholder="Paste Teachable Machine URL here...">
+        <button onclick="loadModel()">Load Model</button>
+        <hr>
+        <h3>2. Upload Animal Photo</h3>
+        <input type="file" id="image-upload" accept="image/*" onchange="previewImage(event)">
+        <img id="image-preview" src="#" alt="Image Preview" style="display:none;">
+        <button id="classify-btn" onclick="classifyImage()" style="display:none; width: 100%; margin-top: 10px;">Analyze Image</button>
+    </div>
+
+    <div id="model-info" class="section" style="display:none;">
+        <h3>3. Model Capability (Class IDs)</h3>
+        <p>The loaded model is trained to recognize the following animals:</p>
+        <div id="class-list"></div>
+        
+        <h3>4. Biological Classification Tree</h3>
+        <div class="tree-container" id="mermaid-tree"></div>
+    </div>
+
+    <div id="result-section" class="section" style="display:none;">
+        <h3>5. Prediction Result</h3>
+        <div class="result-box">
+            <strong>Matched Class ID:</strong> <span id="match-id" style="font-size: 1.2em; color: #e67e22;"></span>
+        </div>
+        
+        <h3>6. Classification Logic & Key Features</h3>
+        <div id="feature-details"></div>
+    </div>
+</div>
+
+<script>
+    let model, maxPredictions;
+    const animalData = {
+        "Cat": { group: "Mammal", features: ["Fur/Hair", "Warm-blooded", "Lungs", "Gives birth to live young"], flow: "Vertebrate → Mammal → Feline → Cat" },
+        "Goldfish": { group: "Fish", features: ["Gills", "Cold-blooded", "Scales (wet)", "Lays eggs in water"], flow: "Vertebrate → Fish → Osteichthyes → Goldfish" },
+        "Crocodile": { group: "Reptile", features: ["Lungs", "Cold-blooded", "Dry Leathery Scales", "Lays eggs on land"], flow: "Vertebrate → Reptile → Crocodilia → Crocodile" },
+        "Pigeon": { group: "Bird", features: ["Feathers", "Warm-blooded", "Lungs", "Lays eggs"], flow: "Vertebrate → Bird → Aves → Pigeon" },
+        "Unknown": { group: "Generic", features: ["Requires manual observation"], flow: "Animal → Model Label" }
+    };
+
+    async function loadModel() {
+        const url = document.getElementById('model-url').value;
+        if (!url) return alert("Please paste a URL first!");
+        
+        const modelURL = url + "model.json";
+        const metadataURL = url + "metadata.json";
+
+        try {
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+            const labels = model.getClassLabels();
+
+            document.getElementById('model-info').style.display = 'block';
+            document.getElementById('class-list').innerHTML = `<ul>${labels.map(l => `<li><strong>${l}</strong></li>`).join('')}</ul>`;
+            
+            generateTree(labels);
+        } catch (e) {
+            alert("Error loading model. Ensure the URL is correct and published.");
+        }
+    }
+
+    function generateTree(labels) {
+        let treeMarkup = "graph TD\n  Root[Animal Kingdom] --> Vertebrates[Vertebrates]\n";
+        labels.forEach((label, index) => {
+            const data = animalData[label] || animalData["Unknown"];
+            treeMarkup += `  Vertebrates --> ${label.replace(/\s/g, '_')}[Class ID ${index}: ${label}]\n`;
+        });
+
+        const treeDiv = document.getElementById('mermaid-tree');
+        treeDiv.innerHTML = `<pre class="mermaid">${treeMarkup}</pre>`;
+        mermaid.init(undefined, treeDiv.querySelectorAll(".mermaid"));
+    }
+
+    function previewImage(event) {
+        const reader = new FileReader();
+        reader.onload = function() {
+            const output = document.getElementById('image-preview');
+            output.src = reader.result;
+            output.style.display = 'block';
+            document.getElementById('classify-btn').style.display = 'block';
+        };
+        reader.readAsDataURL(event.target.files[0]);
+    }
+
+    async function classifyImage() {
+        const img = document.getElementById('image-preview');
+        const prediction = await model.predict(img);
+        
+        let bestMatch = { className: "", probability: -1 };
+        prediction.forEach(p => {
+            if (p.probability > bestMatch.probability) bestMatch = p;
+        });
+
+        document.getElementById('result-section').style.display = 'block';
+        document.getElementById('match-id').innerText = bestMatch.className;
+
+        displayFeatures(bestMatch.className);
+    }
+
+    function displayFeatures(name) {
+        const info = animalData[name] || animalData["Unknown"];
+        const html = `
+            <p><strong>Logical Flow:</strong> ${info.flow}</p>
+            <table>
+                <tr><th>Key Feature</th><th>Description</th></tr>
+                ${info.features.map(f => `<tr><td>Feature</td><td>${f}</td></tr>`).join('')}
+            </table>
+        `;
+        document.getElementById('feature-details').innerHTML = html;
+    }
+</script>
+
+</body>
+</html>
